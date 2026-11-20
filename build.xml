@@ -28,10 +28,8 @@
 
 	<path id="classpath">
         <pathelement path="${buildMM}"/>
-		<fileset dir="${beast2path}/lib" includes="jam.jar"/>
+		<fileset dir="${beast2path}/lib" includes="*.jar"/>
 		<fileset dir="${beast2path}/lib/junit" includes="junit-platform-console-standalone-1.8.2.jar"/>
-		<fileset dir="${beast2path}/lib" includes="beagle.jar"/>
-		<fileset dir="${beast2path}/lib" includes="colt.jar"/>
         <pathelement path="${beast2classpath}"/>
         <pathelement path="${beastappclasspath}"/>
   	</path>
@@ -124,7 +122,7 @@
 
 	
 	<!-- JUnit test -->
-	<target name="junitMM">
+	<target name="junitMM" depends="compile-allMM">
 		<mkdir dir="${report}" />
 		<java classpathref="classpath" classname="org.junit.platform.console.ConsoleLauncher" fork="true" failonerror="true">
 			<arg line="-p test.morphmodels"/>

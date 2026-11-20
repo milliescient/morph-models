@@ -29,6 +29,7 @@
 	<path id="classpath">
         <pathelement path="${buildMM}"/>
 		<fileset dir="${beast2path}/lib" includes="jam.jar"/>
+		<fileset dir="${beast2path}/lib/junit" includes="junit-platform-console-standalone-1.8.2.jar"/>
 		<fileset dir="${beast2path}/lib" includes="beagle.jar"/>
 		<fileset dir="${beast2path}/lib" includes="colt.jar"/>
         <pathelement path="${beast2classpath}"/>
@@ -88,9 +89,7 @@
 		       target="1.8">
 			<include name="morphmodels/**/**" />
 			<!-- compile JUnit test classes -->
-			<!--
-			<include name="test/beast/**" />
-		-->
+			<include name="test/**" />
 		</javac>
 		<echo message="Successfully compiled." />
 	</target>
@@ -127,24 +126,10 @@
 	<!-- JUnit test -->
 	<target name="junitMM">
 		<mkdir dir="${report}" />
-		<junit printsummary="yes"> <!--showoutput='yes'-->
-			<classpath>
-				<path refid="classpath" />
-				<path location="${buildMM}" />
-			</classpath>
-
-			<formatter type="xml" />
-
-			<batchtest fork="yes" todir="${report}">
-				<fileset dir="${srcMM}">
-                    <include name="test/**/*Test.java"/>                                         
-				</fileset>
-				<fileset dir="${srcBeast2}">
-                    <include name="test/beast/integration/**/*Test.java"/>                                         
-                    <exclude name="test/beast/integration/**/ResumeTest.java"/>                                         
-				</fileset>
-			</batchtest>
-		</junit>
+		<java classpathref="classpath" classname="org.junit.platform.console.ConsoleLauncher" fork="true" failonerror="true">
+			<arg line="-p test.morphmodels"/>
+			<arg line="--reports-dir ${report}"/>
+		</java>
 		<echo message="JUnit test finished." />
 	</target>
     

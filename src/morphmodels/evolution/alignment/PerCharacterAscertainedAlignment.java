@@ -1,6 +1,7 @@
 package morphmodels.evolution.alignment;
 
 import beast.base.core.Description;
+import beast.base.core.Input;
 import beast.base.core.Log;
 import beast.base.evolution.alignment.Alignment;
 
@@ -12,10 +13,10 @@ import java.util.Map;
 
 /**
  * Groups patterns by their sets of scored taxa after the usual pattern calculation.
- * Appends one constant pattern per state per class, leaving unscored taxa as missing.
- * Appended patterns have zero weight and do not count as data.
+ * Appends one constant pattern per state per class, or one per class with exchangeableStates,
+ * leaving unscored taxa as missing. Appended patterns have zero weight and do not count as data.
  * Set only ascertained="true" and use PerCharacterAscertainedTreeLikelihood.
- * If most characters have distinct sets of scored taxa, the pattern count roughly doubles.
+ * If most characters have distinct sets of scored taxa, this multiplies the pattern count.
  *
  * @author June Walker
  */
@@ -23,10 +24,19 @@ import java.util.Map;
         + "set of scored taxa")
 public class PerCharacterAscertainedAlignment extends Alignment {
 
+    final public Input<Boolean> exchangeableStatesInput = new Input<>("exchangeableStates",
+            "if true, append one constant pattern per class instead of one per state, and multiply its "
+            + "probability by the number of states. Valid when the states are exchangeable, as under "
+            + "LewisMK with equal frequencies, and not under an ordered model", false);
+
     /** class index for each pattern, or -1 for an appended constant pattern */
     protected int[] classOfPattern;
     /** indices of the appended constant patterns of each class */
     protected List<int[]> constantPatternsOfClass;
+    /** reused between calls so no array is allocated per likelihood evaluation */
+    protected double[] correctionOfClass, correctionOfPattern;
+    /** number of constant patterns each appended one stands for, 1 unless states are exchangeable */
+    protected int stateMultiplier = 1;
 
     @Override
     public void initAndValidate() {
@@ -67,7 +77,9 @@ public class PerCharacterAscertainedAlignment extends Alignment {
             classOfPattern[pattern] = cl;
         }
 
-        final int appended = scoredOfClass.size() * stateCount;
+        final boolean exchangeable = exchangeableStatesInput.get();
+        final int perClass = exchangeable ? 1 : stateCount;
+        final int appended = scoredOfClass.size() * perClass;
         int[][] patterns = Arrays.copyOf(sitePatterns, patternCount + appended);
         int[] weights = Arrays.copyOf(patternWeight, patternCount + appended);
         int[] classes = Arrays.copyOf(classOfPattern, patternCount + appended);
@@ -75,8 +87,8 @@ public class PerCharacterAscertainedAlignment extends Alignment {
 
         int next = patternCount;
         for (boolean[] scored : scoredOfClass) {
-            int[] mine = new int[stateCount];
-            for (int state = 0; state < stateCount; state++) {
+            int[] mine = new int[perClass];
+            for (int state = 0; state < perClass; state++) {
                 int[] pattern = new int[taxonCount];
                 for (int taxon = 0; taxon < taxonCount; taxon++)
                     pattern[taxon] = scored[taxon] ? state : missingCode;
@@ -90,6 +102,9 @@ public class PerCharacterAscertainedAlignment extends Alignment {
         sitePatterns = patterns;
         patternWeight = weights;
         classOfPattern = classes;
+        correctionOfClass = new double[scoredOfClass.size()];
+        correctionOfPattern = new double[classes.length];
+        stateMultiplier = exchangeable ? stateCount : 1;
 
         Log.info.println((getID() == null ? "alignment" : getID()) + ": " + patternCount + " patterns in "
                 + scoredOfClass.size() + " classes of scored taxa, with " + appended
@@ -125,18 +140,17 @@ public class PerCharacterAscertainedAlignment extends Alignment {
      * and zero for the appended constant patterns
      */
     public double[] getAscertainmentCorrections(double[] patternLogProbs) {
-        double[] byClass = new double[constantPatternsOfClass.size()];
-        for (int cl = 0; cl < byClass.length; cl++) {
+        for (int cl = 0; cl < correctionOfClass.length; cl++) {
             double unobserved = 0.0;
             for (int pattern : constantPatternsOfClass.get(cl))
                 unobserved += Math.exp(patternLogProbs[pattern]);
-            byClass[cl] = Math.log(1.0 - Math.min(unobserved, 1.0 - 1e-15));
+            unobserved *= stateMultiplier;
+            correctionOfClass[cl] = Math.log(1.0 - Math.min(unobserved, 1.0 - 1e-15));
         }
-        double[] correction = new double[classOfPattern.length];
-        for (int pattern = 0; pattern < classOfPattern.length; pattern++)
-            if (classOfPattern[pattern] >= 0)
-                correction[pattern] = byClass[classOfPattern[pattern]];
-        return correction;
+        for (int pattern = 0; pattern < correctionOfPattern.length; pattern++)
+            correctionOfPattern[pattern] = classOfPattern[pattern] < 0
+                    ? 0.0 : correctionOfClass[classOfPattern[pattern]];
+        return correctionOfPattern;
     }
 
     public int getClassCount() {

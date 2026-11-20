@@ -29,6 +29,7 @@
 	<path id="classpath">
         <pathelement path="${buildMM}"/>
 		<fileset dir="${beast2path}/lib" includes="*.jar"/>
+		<fileset dir="../BeastFX/locallib" includes="*.jar"/>
 		<fileset dir="${beast2path}/lib/junit" includes="junit-platform-console-standalone-1.8.2.jar"/>
         <pathelement path="${beast2classpath}"/>
         <pathelement path="${beastappclasspath}"/>

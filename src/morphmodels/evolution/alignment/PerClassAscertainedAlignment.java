@@ -15,14 +15,14 @@ import java.util.Map;
  * Groups patterns by their sets of scored taxa after the usual pattern calculation.
  * Appends one constant pattern per state per class, or one per class with exchangeableStates,
  * leaving unscored taxa as missing. Appended patterns have zero weight and do not count as data.
- * Set only ascertained="true" and use PerCharacterAscertainedTreeLikelihood.
+ * Set only ascertained="true" and use PerClassAscertainedTreeLikelihood.
  * If most characters have distinct sets of scored taxa, this multiplies the pattern count.
  *
  * @author June Walker
  */
 @Description("Provides ascertainment corrections conditioned on variability within each pattern's "
         + "set of scored taxa")
-public class PerCharacterAscertainedAlignment extends Alignment {
+public class PerClassAscertainedAlignment extends Alignment {
 
     final public Input<Boolean> exchangeableStatesInput = new Input<>("exchangeableStates",
             "if true, append one constant pattern per class instead of one per state, and multiply its "

@@ -12,8 +12,8 @@ import beast.base.evolution.substitutionmodel.SubstitutionModel;
 import beast.base.evolution.tree.TreeParser;
 import beast.base.inference.parameter.RealParameter;
 
-import morphmodels.evolution.alignment.PerCharacterAscertainedAlignment;
-import morphmodels.evolution.likelihood.PerCharacterAscertainedTreeLikelihood;
+import morphmodels.evolution.alignment.PerClassAscertainedAlignment;
+import morphmodels.evolution.likelihood.PerClassAscertainedTreeLikelihood;
 import morphmodels.evolution.substitutionmodel.LewisMK;
 import morphmodels.evolution.substitutionmodel.Ordinal;
 
@@ -32,7 +32,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *
  * @author June Walker
  */
-public class PerCharacterAscertainedAlignmentTest {
+public class PerClassAscertainedAlignmentTest {
 
     static final double PRECISION = 1e-5;
     static final String[] TAXA = {"A", "B", "C", "D", "E", "F"};
@@ -93,7 +93,7 @@ public class PerCharacterAscertainedAlignmentTest {
     /** one class per distinct set of scored taxa, and one appended pattern per state in each */
     @Test
     public void testClasses() throws Exception {
-        PerCharacterAscertainedAlignment aln = alignment(BINARY, 2, false, null);
+        PerClassAscertainedAlignment aln = alignment(BINARY, 2, false, null);
         assertEquals(8, aln.getClassCount());
         assertEquals(10 + 8 * 2, aln.getPatternCount());
     }
@@ -129,7 +129,7 @@ public class PerCharacterAscertainedAlignmentTest {
         Alignment plain = new Alignment();
         plain.initByName("sequence", seqs, "dataType", "standard", "userDataType", dt);
         assertEquals(logP(new TreeLikelihood(), plain, dt, false, false),
-                     logP(new PerCharacterAscertainedTreeLikelihood(), plain, dt, false, false), PRECISION);
+                     logP(new PerClassAscertainedTreeLikelihood(), plain, dt, false, false), PRECISION);
     }
 
     /**
@@ -156,17 +156,17 @@ public class PerCharacterAscertainedAlignmentTest {
     double ambiguous(String[] rows) throws Exception {
         StandardData dt = new StandardData();
         dt.initByName("nrOfStates", 3, "ambiguities", "02");
-        PerCharacterAscertainedTreeLikelihood lik = new PerCharacterAscertainedTreeLikelihood();
+        PerClassAscertainedTreeLikelihood lik = new PerClassAscertainedTreeLikelihood();
         return logP(lik, alignment(rows, 3, false, "02"), dt, false, true);
     }
 
     double perCharacter(String[] rows, int nStates, boolean ordered, boolean exchangeable) throws Exception {
         StandardData dt = new StandardData();
         dt.initByName("nrOfStates", nStates);
-        return logP(new PerCharacterAscertainedTreeLikelihood(), alignment(rows, nStates, exchangeable, null), dt, ordered, false);
+        return logP(new PerClassAscertainedTreeLikelihood(), alignment(rows, nStates, exchangeable, null), dt, ordered, false);
     }
 
-    PerCharacterAscertainedAlignment alignment(String[] rows, int nStates, boolean exchangeable,
+    PerClassAscertainedAlignment alignment(String[] rows, int nStates, boolean exchangeable,
                                                String ambiguities) throws Exception {
         List<Sequence> seqs = new ArrayList<>();
         for (int i = 0; i < TAXA.length; i++) {
@@ -179,7 +179,7 @@ public class PerCharacterAscertainedAlignmentTest {
             dt.initByName("nrOfStates", nStates);
         else
             dt.initByName("nrOfStates", nStates, "ambiguities", ambiguities);
-        PerCharacterAscertainedAlignment aln = new PerCharacterAscertainedAlignment();
+        PerClassAscertainedAlignment aln = new PerClassAscertainedAlignment();
         aln.initByName("sequence", seqs, "dataType", "standard", "userDataType", dt,
                 "ascertained", true, "exchangeableStates", exchangeable);
         return aln;

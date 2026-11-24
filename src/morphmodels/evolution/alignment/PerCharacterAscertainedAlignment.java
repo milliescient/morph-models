@@ -37,6 +37,8 @@ public class PerCharacterAscertainedAlignment extends Alignment {
     protected double[] correctionOfClass, correctionOfPattern;
     /** number of constant patterns each appended one stands for, 1 unless states are exchangeable */
     protected int stateMultiplier = 1;
+    /** states every scored taxon of a pattern admits, so a resolution the condition excludes */
+    protected int[][] admittedOfPattern;
 
     @Override
     public void initAndValidate() {
@@ -56,6 +58,7 @@ public class PerCharacterAscertainedAlignment extends Alignment {
                     + stateCount);
         final int missingCode = missingCode(stateCount);
         final int patternCount = getPatternCount();
+        rejectUndeclaredAmbiguities(patternCount);
 
         Map<String, Integer> classOfKey = new HashMap<>();
         List<boolean[]> scoredOfClass = new ArrayList<>();
@@ -77,7 +80,51 @@ public class PerCharacterAscertainedAlignment extends Alignment {
             classOfPattern[pattern] = cl;
         }
 
-        final boolean exchangeable = exchangeableStatesInput.get();
+        admittedOfPattern = new int[patternCount][];
+        int restricted = 0, impossible = 0;
+        for (int pattern = 0; pattern < patternCount; pattern++) {
+            boolean[] admits = new boolean[stateCount];
+            Arrays.fill(admits, true);
+            int scoredTaxa = 0;
+            for (int taxon = 0; taxon < taxonCount; taxon++) {
+                int code = sitePatterns[pattern][taxon];
+                if (isUnscored(code, stateCount))
+                    continue;
+                scoredTaxa++;
+                boolean[] here = new boolean[stateCount];
+                for (int state : m_dataType.getStatesForCode(code))
+                    if (state >= 0 && state < stateCount)
+                        here[state] = true;
+                for (int state = 0; state < stateCount; state++)
+                    admits[state] &= here[state];
+            }
+            int n = 0;
+            for (int state = 0; state < stateCount; state++)
+                if (admits[state]) n++;
+            if (scoredTaxa < 2 || n == 0) {
+                admittedOfPattern[pattern] = new int[0];
+                continue;
+            }
+            int[] states = new int[n];
+            for (int state = 0, at = 0; state < stateCount; state++)
+                if (admits[state]) states[at++] = state;
+            admittedOfPattern[pattern] = states;
+            if (isConstant(pattern, stateCount))
+                impossible++;
+            else
+                restricted++;
+        }
+        if (impossible > 0)
+            Log.warning.println((getID() == null ? "alignment" : getID()) + ": " + impossible
+                    + " patterns have no resolution that is variable among their scored taxa, so under this"
+                    + " correction they could not have been recorded; their likelihood is left uncorrected");
+
+        final boolean exchangeable = exchangeableStatesInput.get() && restricted == 0 && impossible == 0;
+        if (exchangeableStatesInput.get() && !exchangeable)
+            Log.warning.println((getID() == null ? "alignment" : getID())
+                    + ": exchangeableStates ignored because " + (restricted + impossible)
+                    + " patterns are held to their observed states, which the states no longer being"
+                    + " interchangeable requires one constant pattern per state");
         final int perClass = exchangeable ? 1 : stateCount;
         final int appended = scoredOfClass.size() * perClass;
         int[][] patterns = Arrays.copyOf(sitePatterns, patternCount + appended);
@@ -109,6 +156,38 @@ public class PerCharacterAscertainedAlignment extends Alignment {
         Log.info.println((getID() == null ? "alignment" : getID()) + ": " + patternCount + " patterns in "
                 + scoredOfClass.size() + " classes of scored taxa, with " + appended
                 + " constant patterns appended");
+    }
+
+    /**
+     * A standard data type maps an ambiguity set it does not declare to -1, which it then reads
+     * as missing, so a polymorphic cell would be silently discarded.
+     */
+    protected void rejectUndeclaredAmbiguities(int patternCount) {
+        for (int pattern = 0; pattern < patternCount; pattern++)
+            for (int taxon = 0; taxon < taxaNames.size(); taxon++)
+                if (sitePatterns[pattern][taxon] < 0)
+                    throw new IllegalArgumentException((getID() == null ? "alignment" : getID())
+                            + ": taxon " + taxaNames.get(taxon) + " carries an ambiguity set that the data"
+                            + " type does not declare, which would be read as missing data. List every set"
+                            + " that occurs, such as \"02 12\", in the data type's ambiguities input.");
+    }
+
+    /** true when every scored taxon carries the same single state */
+    protected boolean isConstant(int pattern, int stateCount) {
+        int seen = -1;
+        for (int taxon = 0; taxon < taxaNames.size(); taxon++) {
+            int code = sitePatterns[pattern][taxon];
+            if (isUnscored(code, stateCount))
+                continue;
+            int[] states = m_dataType.getStatesForCode(code);
+            if (states.length != 1)
+                return false;
+            if (seen == -1)
+                seen = states[0];
+            else if (seen != states[0])
+                return false;
+        }
+        return seen != -1;
     }
 
     /** true if the code leaves the state unknown, so the taxon was not scored */
@@ -147,9 +226,25 @@ public class PerCharacterAscertainedAlignment extends Alignment {
             unobserved *= stateMultiplier;
             correctionOfClass[cl] = Math.log(1.0 - Math.min(unobserved, 1.0 - 1e-15));
         }
-        for (int pattern = 0; pattern < correctionOfPattern.length; pattern++)
-            correctionOfPattern[pattern] = classOfPattern[pattern] < 0
-                    ? 0.0 : correctionOfClass[classOfPattern[pattern]];
+        for (int pattern = 0; pattern < correctionOfPattern.length; pattern++) {
+            if (classOfPattern[pattern] < 0) {
+                correctionOfPattern[pattern] = 0.0;
+                continue;
+            }
+            correctionOfPattern[pattern] = correctionOfClass[classOfPattern[pattern]];
+            if (stateMultiplier != 1 || admittedOfPattern == null
+                    || pattern >= admittedOfPattern.length || admittedOfPattern[pattern].length == 0)
+                continue;
+            int[] mine = constantPatternsOfClass.get(classOfPattern[pattern]);
+            double removed = 0.0;
+            for (int state : admittedOfPattern[pattern])
+                if (state < mine.length)
+                    removed += Math.exp(patternLogProbs[mine[state]]);
+            double total = Math.exp(patternLogProbs[pattern]);
+            if (removed <= 0.0 || total <= 0.0 || removed >= total)
+                continue;
+            correctionOfPattern[pattern] -= Math.log1p(-removed / total);
+        }
         return correctionOfPattern;
     }
 

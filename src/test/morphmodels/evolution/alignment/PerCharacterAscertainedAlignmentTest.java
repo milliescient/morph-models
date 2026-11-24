@@ -22,6 +22,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 /**
  * Six taxa on a fixed tree, ten characters with eight distinct sets of scored taxa.
@@ -91,7 +92,7 @@ public class PerCharacterAscertainedAlignmentTest {
     /** one class per distinct set of scored taxa, and one appended pattern per state in each */
     @Test
     public void testClasses() throws Exception {
-        PerCharacterAscertainedAlignment aln = alignment(BINARY, 2, false);
+        PerCharacterAscertainedAlignment aln = alignment(BINARY, 2, false, null);
         assertEquals(8, aln.getClassCount());
         assertEquals(10 + 8 * 2, aln.getPatternCount());
     }
@@ -110,7 +111,7 @@ public class PerCharacterAscertainedAlignmentTest {
         Alignment aln = new Alignment();
         aln.initByName("sequence", seqs, "dataType", "standard", "userDataType", dt,
                 "ascertained", true, "excludefrom", 10, "excludeto", 12);
-        assertEquals(-47.159019, logP(new TreeLikelihood(), aln, dt, false), PRECISION);
+        assertEquals(-47.159019, logP(new TreeLikelihood(), aln, dt, false, false), PRECISION);
     }
 
     /** on a plain Alignment there are no classes to use, so the likelihood is a TreeLikelihood */
@@ -126,17 +127,43 @@ public class PerCharacterAscertainedAlignmentTest {
         }
         Alignment plain = new Alignment();
         plain.initByName("sequence", seqs, "dataType", "standard", "userDataType", dt);
-        assertEquals(logP(new TreeLikelihood(), plain, dt, false),
-                     logP(new PerCharacterAscertainedTreeLikelihood(), plain, dt, false), PRECISION);
+        assertEquals(logP(new TreeLikelihood(), plain, dt, false, false),
+                     logP(new PerCharacterAscertainedTreeLikelihood(), plain, dt, false, false), PRECISION);
+    }
+
+    /**
+     * Conditioning on variability must drop the resolutions of a partly ambiguous cell that are
+     * constant, so an ambiguous character and its only resolution that stays variable agree.
+     */
+    @Test
+    public void testAmbiguousMatchesItsVariableResolution() throws Exception {
+        String[] ambiguous = {"0", "0", "0", "0", "0", "{02}"};
+        String[] resolved  = {"0", "0", "0", "0", "0", "2"};
+        assertEquals(ambiguous(resolved), ambiguous(ambiguous), PRECISION);
+    }
+
+    /** an ambiguity set the data type does not declare would be read as missing, so it is refused */
+    @Test
+    public void testUndeclaredAmbiguityIsRefused() {
+        String[] rows = {"0", "0", "0", "0", "0", "{02}"};
+        assertThrows(IllegalArgumentException.class, () -> alignment(rows, 3, false, null));
+    }
+
+    double ambiguous(String[] rows) throws Exception {
+        StandardData dt = new StandardData();
+        dt.initByName("nrOfStates", 3, "ambiguities", "02");
+        PerCharacterAscertainedTreeLikelihood lik = new PerCharacterAscertainedTreeLikelihood();
+        return logP(lik, alignment(rows, 3, false, "02"), dt, false, true);
     }
 
     double perCharacter(String[] rows, int nStates, boolean ordered, boolean exchangeable) throws Exception {
         StandardData dt = new StandardData();
         dt.initByName("nrOfStates", nStates);
-        return logP(new PerCharacterAscertainedTreeLikelihood(), alignment(rows, nStates, exchangeable), dt, ordered);
+        return logP(new PerCharacterAscertainedTreeLikelihood(), alignment(rows, nStates, exchangeable, null), dt, ordered, false);
     }
 
-    PerCharacterAscertainedAlignment alignment(String[] rows, int nStates, boolean exchangeable) throws Exception {
+    PerCharacterAscertainedAlignment alignment(String[] rows, int nStates, boolean exchangeable,
+                                               String ambiguities) throws Exception {
         List<Sequence> seqs = new ArrayList<>();
         for (int i = 0; i < TAXA.length; i++) {
             Sequence s = new Sequence();
@@ -144,19 +171,26 @@ public class PerCharacterAscertainedAlignmentTest {
             seqs.add(s);
         }
         StandardData dt = new StandardData();
-        dt.initByName("nrOfStates", nStates);
+        if (ambiguities == null)
+            dt.initByName("nrOfStates", nStates);
+        else
+            dt.initByName("nrOfStates", nStates, "ambiguities", ambiguities);
         PerCharacterAscertainedAlignment aln = new PerCharacterAscertainedAlignment();
         aln.initByName("sequence", seqs, "dataType", "standard", "userDataType", dt,
                 "ascertained", true, "exchangeableStates", exchangeable);
         return aln;
     }
 
-    double logP(TreeLikelihood lik, Alignment aln, StandardData dt, boolean ordered) throws Exception {
+    double logP(TreeLikelihood lik, Alignment aln, StandardData dt, boolean ordered,
+                boolean useAmbiguities) throws Exception {
         TreeParser tree = new TreeParser();
         tree.initByName("taxa", aln, "newick", NEWICK, "IsLabelledNewick", true, "adjustTipHeights", false);
         SiteModel siteModel = new SiteModel();
         siteModel.initByName("substModel", substModel(dt, ordered));
-        lik.initByName("data", aln, "tree", tree, "siteModel", siteModel);
+        if (useAmbiguities)
+            lik.initByName("data", aln, "tree", tree, "siteModel", siteModel, "useAmbiguities", true);
+        else
+            lik.initByName("data", aln, "tree", tree, "siteModel", siteModel);
         return lik.calculateLogP();
     }
 

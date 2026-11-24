@@ -13,6 +13,7 @@ import beast.base.evolution.tree.TreeParser;
 import beast.base.inference.parameter.RealParameter;
 
 import morphmodels.evolution.alignment.PerClassAscertainedAlignment;
+import morphmodels.evolution.likelihood.UninformativeProbability;
 import morphmodels.evolution.likelihood.PerClassAscertainedTreeLikelihood;
 import morphmodels.evolution.substitutionmodel.LewisMK;
 import morphmodels.evolution.substitutionmodel.Ordinal;
@@ -158,6 +159,52 @@ public class PerClassAscertainedAlignmentTest {
         dt.initByName("nrOfStates", 3, "ambiguities", "02");
         PerClassAscertainedTreeLikelihood lik = new PerClassAscertainedTreeLikelihood();
         return logP(lik, alignment(rows, 3, false, "02"), dt, false, true);
+    }
+
+    /** the informative correction, summed by recursion, must match RevBayes on the same model */
+    @Test
+    public void testInformativeMatchesRevBayes() throws Exception {
+        String[] rows = {"001", "011", "101", "110", "?10"};
+        StandardData dt = new StandardData();
+        dt.initByName("nrOfStates", 3);
+        PerClassAscertainedAlignment aln = new PerClassAscertainedAlignment();
+        List<Sequence> seqs = new ArrayList<>();
+        String[] five = {"t1", "t2", "t3", "t4", "t5"};
+        for (int i = 0; i < five.length; i++) {
+            Sequence s = new Sequence();
+            s.initByName("taxon", five[i], "value", rows[i]);
+            seqs.add(s);
+        }
+        aln.initByName("sequence", seqs, "dataType", "standard", "userDataType", dt,
+                "ascertained", true, "coding", "informative");
+        TreeParser tree = new TreeParser();
+        tree.initByName("taxa", aln, "newick",
+                "(((t1:0.3,t2:0.3):0.3,(t3:0.3,t4:0.3):0.3):0.3,t5:0.6);",
+                "IsLabelledNewick", true, "adjustTipHeights", false);
+        SiteModel siteModel = new SiteModel();
+        siteModel.initByName("substModel", substModel(dt, false));
+        PerClassAscertainedTreeLikelihood lik = new PerClassAscertainedTreeLikelihood();
+        lik.initByName("data", aln, "tree", tree, "siteModel", siteModel);
+        assertEquals(-12.27542, lik.calculateLogP(), 1e-4);
+    }
+
+    /** with three scored taxa no pattern can be informative, so the whole probability is excluded */
+    @Test
+    public void testInformativeIsCertainBelowFourTaxa() throws Exception {
+        StandardData dt = new StandardData();
+        dt.initByName("nrOfStates", 3);
+        PerClassAscertainedAlignment aln = alignment(new String[] {"0", "1", "2", "?", "?", "?"}, 3, false, null);
+        TreeParser tree = new TreeParser();
+        tree.initByName("taxa", aln, "newick", NEWICK, "IsLabelledNewick", true, "adjustTipHeights", false);
+        SiteModel siteModel = new SiteModel();
+        siteModel.initByName("substModel", substModel(dt, false));
+        boolean[] scored = new boolean[tree.getNodeCount()];
+        for (beast.base.evolution.tree.Node n : tree.getNodesAsArray())
+            if (n.isLeaf())
+                scored[n.getNr()] = aln.getTaxonIndex(n.getID()) < 3;
+        double u = UninformativeProbability.uninformative(tree, substModel(dt, false), siteModel,
+                null, scored, 3);
+        assertEquals(1.0, u, 1e-12);
     }
 
     double perCharacter(String[] rows, int nStates, boolean ordered, boolean exchangeable) throws Exception {

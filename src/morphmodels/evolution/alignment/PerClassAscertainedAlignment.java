@@ -29,8 +29,15 @@ public class PerClassAscertainedAlignment extends Alignment {
             + "probability by the number of states. Valid when the states are exchangeable, as under "
             + "LewisMK with equal frequencies, and not under an ordered model", false);
 
+    final public Input<String> codingInput = new Input<>("coding",
+            "which characters the matrix could have recorded: variable, or informative for "
+            + "parsimony informative. Under informative the correction is computed by recursion "
+            + "rather than from appended constant patterns", "variable");
+
     /** class index for each pattern, or -1 for an appended constant pattern */
     protected int[] classOfPattern;
+    /** the scored taxa of each class, indexed by taxon */
+    protected List<boolean[]> scoredOfClass;
     /** indices of the appended constant patterns of each class */
     protected List<int[]> constantPatternsOfClass;
     /** reused between calls so no array is allocated per likelihood evaluation */
@@ -61,7 +68,7 @@ public class PerClassAscertainedAlignment extends Alignment {
         rejectUndeclaredAmbiguities(patternCount);
 
         Map<String, Integer> classOfKey = new HashMap<>();
-        List<boolean[]> scoredOfClass = new ArrayList<>();
+        scoredOfClass = new ArrayList<>();
         classOfPattern = new int[patternCount];
 
         for (int pattern = 0; pattern < patternCount; pattern++) {
@@ -81,7 +88,7 @@ public class PerClassAscertainedAlignment extends Alignment {
         }
 
         admittedOfPattern = new int[patternCount][];
-        int restricted = 0, impossible = 0;
+        int restricted = 0;
         for (int pattern = 0; pattern < patternCount; pattern++) {
             boolean[] admits = new boolean[stateCount];
             Arrays.fill(admits, true);
@@ -109,15 +116,33 @@ public class PerClassAscertainedAlignment extends Alignment {
             for (int state = 0, at = 0; state < stateCount; state++)
                 if (admits[state]) states[at++] = state;
             admittedOfPattern[pattern] = states;
-            if (isConstant(pattern, stateCount))
-                impossible++;
-            else
-                restricted++;
+            restricted++;
         }
+
+        // a character with no admissible resolution could not have been recorded under this
+        // coding, so it is dropped the way the other implementations drop it, by zeroing its
+        // weight rather than by renumbering the patterns
+        int impossible = 0;
+        for (int pattern = 0; pattern < patternCount; pattern++)
+            if (!hasAdmissibleResolution(pattern, stateCount)) {
+                patternWeight[pattern] = 0;
+                impossible++;
+            }
         if (impossible > 0)
             Log.warning.println((getID() == null ? "alignment" : getID()) + ": " + impossible
-                    + " patterns have no resolution that is variable among their scored taxa, so under this"
-                    + " correction they could not have been recorded; their likelihood is left uncorrected");
+                    + " patterns have no resolution this coding admits and are excluded");
+
+        if (isInformative())
+        {
+            // the informative correction is a recursion over the tree, so there is nothing to append
+            correctionOfClass = new double[scoredOfClass.size()];
+            correctionOfPattern = new double[classOfPattern.length];
+            constantPatternsOfClass = new ArrayList<>();
+            Log.info.println((getID() == null ? "alignment" : getID()) + ": " + getPatternCount()
+                    + " patterns in " + scoredOfClass.size() + " classes of scored taxa, corrected"
+                    + " for parsimony informative coding");
+            return;
+        }
 
         final boolean exchangeable = exchangeableStatesInput.get() && restricted == 0 && impossible == 0;
         if (exchangeableStatesInput.get() && !exchangeable)
@@ -170,6 +195,57 @@ public class PerClassAscertainedAlignment extends Alignment {
                             + ": taxon " + taxaNames.get(taxon) + " carries an ambiguity set that the data"
                             + " type does not declare, which would be read as missing data. List every set"
                             + " that occurs, such as \"02 12\", in the data type's ambiguities input.");
+    }
+
+    /**
+     * True when some resolution of a pattern's ambiguous cells satisfies the coding, so the
+     * character could have been recorded. Variable needs two scored cells that can differ.
+     * Informative needs one state twice and a second state twice, which for cells A and B
+     * admitting each is possible exactly when |A| >= 2, |B| >= 2 and |A or B| >= 4.
+     */
+    protected boolean hasAdmissibleResolution(int pattern, int stateCount) {
+        List<int[]> cells = new ArrayList<>();
+        for (int taxon = 0; taxon < taxaNames.size(); taxon++) {
+            int code = sitePatterns[pattern][taxon];
+            if (isUnscored(code, stateCount))
+                continue;
+            int[] states = m_dataType.getStatesForCode(code);
+            if (states == null || states.length == 0 || states.length >= stateCount)
+                continue;
+            cells.add(states);
+        }
+        if (cells.size() < 2)
+            return false;
+
+        if (!isInformative()) {
+            // every resolution is constant only when every cell is the same single state
+            for (int[] c : cells)
+                if (c.length != 1 || c[0] != cells.get(0)[0])
+                    return true;
+            return false;
+        }
+
+        if (cells.size() < 4)
+            return false;
+        for (int x = 0; x < stateCount; x++)
+            for (int y = x + 1; y < stateCount; y++) {
+                int nA = 0, nB = 0, either = 0;
+                for (int[] c : cells) {
+                    boolean inA = contains(c, x), inB = contains(c, y);
+                    if (inA) nA++;
+                    if (inB) nB++;
+                    if (inA || inB) either++;
+                }
+                if (nA >= 2 && nB >= 2 && either >= 4)
+                    return true;
+            }
+        return false;
+    }
+
+    private static boolean contains(int[] states, int state) {
+        for (int s : states)
+            if (s == state) return true;
+        return false;
     }
 
     /** true when every scored taxon carries the same single state */
@@ -246,6 +322,18 @@ public class PerClassAscertainedAlignment extends Alignment {
             correctionOfPattern[pattern] -= Math.log1p(-removed / total);
         }
         return correctionOfPattern;
+    }
+
+    public boolean isInformative() {
+        return codingInput.get() != null && codingInput.get().toLowerCase().startsWith("inf");
+    }
+
+    public List<boolean[]> getScoredOfClass() {
+        return scoredOfClass;
+    }
+
+    public int[] getClassOfPattern() {
+        return classOfPattern;
     }
 
     public int getClassCount() {

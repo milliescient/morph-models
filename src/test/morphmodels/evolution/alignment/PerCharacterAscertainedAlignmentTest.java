@@ -23,6 +23,7 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Six taxa on a fixed tree, ten characters with eight distinct sets of scored taxa.
@@ -146,7 +147,10 @@ public class PerCharacterAscertainedAlignmentTest {
     @Test
     public void testUndeclaredAmbiguityIsRefused() {
         String[] rows = {"0", "0", "0", "0", "0", "{02}"};
-        assertThrows(IllegalArgumentException.class, () -> alignment(rows, 3, false, null));
+        // BEAST wraps an input's exception, so match on the message rather than the type
+        RuntimeException e = assertThrows(RuntimeException.class, () -> alignment(rows, 3, false, null));
+        String m = e.getMessage() + (e.getCause() == null ? "" : " " + e.getCause().getMessage());
+        assertTrue(m.contains("ambiguities"), "expected the message to name the ambiguities input, got: " + m);
     }
 
     double ambiguous(String[] rows) throws Exception {

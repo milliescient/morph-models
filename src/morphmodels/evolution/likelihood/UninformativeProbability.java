@@ -25,10 +25,25 @@ public class UninformativeProbability {
     public static double uninformative(TreeInterface tree, SubstitutionModel sm,
                                        SiteModel.Base siteModel, BranchRateModel.Base clock,
                                        boolean[] scored, int stateCount) {
+        return uninformative(tree, sm, siteModel, clock, scored, stateCount, false);
+    }
+
+    /**
+     * With ordered = true the uninformative class is the one of the ordered (Wagner) model, where
+     * a pattern is informative only when some threshold has two taxa on each side. Such a pattern
+     * is uninformative exactly when one state is a background, at most one taxon lies strictly
+     * below it and at most one strictly above, so the recursion carries two bits rather than a set.
+     */
+    public static double uninformative(TreeInterface tree, SubstitutionModel sm,
+                                       SiteModel.Base siteModel, BranchRateModel.Base clock,
+                                       boolean[] scored, int stateCount, boolean ordered) {
         int scoredCount = 0;
         for (boolean b : scored)
             if (b) scoredCount++;
         if (scoredCount < 1)
+            return 1.0;
+        // either criterion needs two taxa on each side, so fewer than four can never be informative
+        if (scoredCount < 4)
             return 1.0;
 
         double total = 0.0;
@@ -36,15 +51,16 @@ public class UninformativeProbability {
         double[] proportions = siteModel.getCategoryProportions(tree.getRoot());
         for (int category = 0; category < categories; category++) {
             double rate = siteModel.getRateForCategory(category, tree.getRoot());
-            total += proportions[category] * forRate(tree, sm, clock, scored, stateCount, scoredCount, rate);
+            total += proportions[category]
+                   * forRate(tree, sm, clock, scored, stateCount, scoredCount, rate, ordered);
         }
         return total;
     }
 
     private static double forRate(TreeInterface tree, SubstitutionModel sm, BranchRateModel.Base clock,
-                                  boolean[] scored, int k, int scoredCount, double rate) {
+                                  boolean[] scored, int k, int scoredCount, double rate, boolean ordered) {
         int nodeCount = tree.getNodeCount();
-        int masks = 1 << (k - 1);
+        int masks = ordered ? 4 : 1 << (k - 1);
         double[] freqs = sm.getFrequencies();
         double[][] probs = new double[nodeCount][k * k];
         for (Node node : tree.getNodesAsArray()) {
@@ -58,10 +74,10 @@ public class UninformativeProbability {
         double total = 0.0;
         for (int background = 0; background < k; background++) {
             double[][] partials = new double[nodeCount][k * masks];
-            fill(tree.getRoot(), partials, probs, scored, k, masks, background);
+            fill(tree.getRoot(), partials, probs, scored, k, masks, background, ordered);
             double[] root = partials[tree.getRoot().getNr()];
             for (int mask = 0; mask < masks; mask++) {
-                double weight = weight(mask, scoredCount);
+                double weight = ordered ? 1.0 : weight(mask, scoredCount);
                 if (weight == 0.0)
                     continue;
                 double p = 0.0;
@@ -89,7 +105,7 @@ public class UninformativeProbability {
 
     /** post-order fill of the (state, singleton set) partials */
     private static void fill(Node node, double[][] partials, double[][] probs, boolean[] scored,
-                             int k, int masks, int background) {
+                             int k, int masks, int background, boolean ordered) {
         double[] here = partials[node.getNr()];
 
         if (node.isLeaf()) {
@@ -103,13 +119,14 @@ public class UninformativeProbability {
             for (int state = 0; state < k; state++) {
                 if (state == background)
                     continue;
-                here[state * masks + (1 << bitOf(state, background))] = 1.0;
+                int bit = ordered ? (state < background ? 0 : 1) : bitOf(state, background);
+                here[state * masks + (1 << bit)] = 1.0;
             }
             return;
         }
 
         for (Node child : node.getChildren())
-            fill(child, partials, probs, scored, k, masks, background);
+            fill(child, partials, probs, scored, k, masks, background, ordered);
 
         // the branch message of each child, then a disjoint split of the singleton set between them
         int children = node.getChildCount();

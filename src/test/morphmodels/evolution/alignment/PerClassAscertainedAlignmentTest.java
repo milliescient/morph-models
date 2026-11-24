@@ -164,19 +164,29 @@ public class PerClassAscertainedAlignmentTest {
     /** the informative correction, summed by recursion, must match RevBayes on the same model */
     @Test
     public void testInformativeMatchesRevBayes() throws Exception {
+        assertEquals(-12.27542, informativeLogP(false), 1e-4);
+    }
+
+    /** the ordered informative correction must match RevBayes under coding="informative|ordered" */
+    @Test
+    public void testOrderedInformativeMatchesRevBayes() throws Exception {
+        assertEquals(-13.23977, informativeLogP(true), 1e-4);
+    }
+
+    double informativeLogP(boolean ordered) throws Exception {
         String[] rows = {"001", "011", "101", "110", "?10"};
+        String[] five = {"t1", "t2", "t3", "t4", "t5"};
         StandardData dt = new StandardData();
         dt.initByName("nrOfStates", 3);
-        PerClassAscertainedAlignment aln = new PerClassAscertainedAlignment();
         List<Sequence> seqs = new ArrayList<>();
-        String[] five = {"t1", "t2", "t3", "t4", "t5"};
         for (int i = 0; i < five.length; i++) {
             Sequence s = new Sequence();
             s.initByName("taxon", five[i], "value", rows[i]);
             seqs.add(s);
         }
+        PerClassAscertainedAlignment aln = new PerClassAscertainedAlignment();
         aln.initByName("sequence", seqs, "dataType", "standard", "userDataType", dt,
-                "ascertained", true, "coding", "informative");
+                "ascertained", true, "coding", "informative", "ordered", ordered);
         TreeParser tree = new TreeParser();
         tree.initByName("taxa", aln, "newick",
                 "(((t1:0.3,t2:0.3):0.3,(t3:0.3,t4:0.3):0.3):0.3,t5:0.6);",
@@ -185,7 +195,7 @@ public class PerClassAscertainedAlignmentTest {
         siteModel.initByName("substModel", substModel(dt, false));
         PerClassAscertainedTreeLikelihood lik = new PerClassAscertainedTreeLikelihood();
         lik.initByName("data", aln, "tree", tree, "siteModel", siteModel);
-        assertEquals(-12.27542, lik.calculateLogP(), 1e-4);
+        return lik.calculateLogP();
     }
 
     /** with three scored taxa no pattern can be informative, so the whole probability is excluded */

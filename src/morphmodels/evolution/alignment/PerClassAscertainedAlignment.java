@@ -34,6 +34,11 @@ public class PerClassAscertainedAlignment extends Alignment {
             + "parsimony informative. Under informative the correction is computed by recursion "
             + "rather than from appended constant patterns", "variable");
 
+    final public Input<Boolean> orderedInput = new Input<>("ordered",
+            "if true the informative coding uses the uninformative class of the ordered (Wagner) "
+            + "model, where a character is informative only when some threshold has two taxa on "
+            + "each side", false);
+
     /** class index for each pattern, or -1 for an appended constant pattern */
     protected int[] classOfPattern;
     /** the scored taxa of each class, indexed by taxon */
@@ -227,6 +232,22 @@ public class PerClassAscertainedAlignment extends Alignment {
 
         if (cells.size() < 4)
             return false;
+        if (isOrdered()) {
+            // two taxa must be able to fall on each side of some threshold
+            for (int j = 1; j < stateCount; j++) {
+                int below = 0, above = 0;
+                for (int[] c : cells) {
+                    boolean lo = false, hi = false;
+                    for (int st : c)
+                        if (st < j) lo = true; else hi = true;
+                    if (lo) below++;
+                    if (hi) above++;
+                }
+                if (below >= 2 && above >= 2)
+                    return true;
+            }
+            return false;
+        }
         for (int x = 0; x < stateCount; x++)
             for (int y = x + 1; y < stateCount; y++) {
                 int nA = 0, nB = 0, either = 0;
@@ -322,6 +343,10 @@ public class PerClassAscertainedAlignment extends Alignment {
             correctionOfPattern[pattern] -= Math.log1p(-removed / total);
         }
         return correctionOfPattern;
+    }
+
+    public boolean isOrdered() {
+        return orderedInput.get() != null && orderedInput.get();
     }
 
     public boolean isInformative() {

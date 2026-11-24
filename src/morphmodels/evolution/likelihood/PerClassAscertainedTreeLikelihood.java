@@ -63,7 +63,8 @@ public class PerClassAscertainedTreeLikelihood extends TreeLikelihood {
                     scoredByNode[node.getNr()] = taxon >= 0 && classes.get(cl)[taxon];
                 }
             double unobserved = UninformativeProbability.uninformative(treeInput.get(),
-                    substitutionModel, m_siteModel, branchRateModel, scoredByNode, states);
+                    substitutionModel, m_siteModel, branchRateModel, scoredByNode, states,
+                    perClass.isOrdered());
             byClass[cl] = Math.log(1.0 - Math.min(unobserved, 1.0 - 1e-15));
         }
         for (int pattern = 0; pattern < classOf.length; pattern++)
